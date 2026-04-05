@@ -29,6 +29,8 @@ pub struct RuntimeState {
     pub last_upload_at: Option<DateTime<Utc>>,
     pub last_upload_message: Option<String>,
     pub last_collected_at: Option<DateTime<Utc>>,
+    pub outbox_dirty: bool,
+    pub last_persisted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,12 +77,33 @@ pub struct TimelineSegment {
     pub interruption_count: i64,
 }
 
+const PERSIST_THROTTLE_SECS: i64 = 30;
+
 impl RuntimeState {
-    pub fn persist(&self) -> Result<(), String> {
-        save_outbox(&self.outbox_path, &self.outbox)
+    pub fn mark_dirty(&mut self) {
+        self.outbox_dirty = true;
     }
 
-    pub fn persist_all(&self) -> Result<(), String> {
+    pub fn persist(&mut self) -> Result<(), String> {
+        save_outbox(&self.outbox_path, &self.outbox)?;
+        self.outbox_dirty = false;
+        self.last_persisted_at = Some(Utc::now());
+        Ok(())
+    }
+
+    pub fn persist_if_dirty(&mut self) -> Result<(), String> {
+        if !self.outbox_dirty {
+            return Ok(());
+        }
+        if let Some(last) = self.last_persisted_at {
+            if (Utc::now() - last).num_seconds() < PERSIST_THROTTLE_SECS {
+                return Ok(());
+            }
+        }
+        self.persist()
+    }
+
+    pub fn persist_all(&mut self) -> Result<(), String> {
         self.persist()?;
         save_settings(
             &self.settings_path,
@@ -131,6 +154,8 @@ pub fn create_state(app: &AppHandle) -> Result<SharedState, String> {
             last_upload_at: None,
             last_upload_message: None,
             last_collected_at: None,
+            outbox_dirty: false,
+            last_persisted_at: None,
         }),
     })
 }
@@ -407,7 +432,7 @@ fn default_settings() -> PersistedSettings {
         upload_interval_secs: std::env::var("FOCUS_COLLECTOR_UPLOAD_INTERVAL_SECS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(120),
+            .unwrap_or(300),
     }
 }
 
@@ -561,7 +586,7 @@ mod tests {
         assert_eq!(settings.base_url, "https://second-brain-self-alpha.vercel.app");
         assert_eq!(settings.time_zone, "UTC");
         assert_eq!(settings.sample_interval_secs, 5);
-        assert_eq!(settings.upload_interval_secs, 120);
+        assert_eq!(settings.upload_interval_secs, 300);
     }
 
     #[test]
@@ -620,6 +645,8 @@ mod tests {
             last_upload_at: None,
             last_upload_message: Some("ok".into()),
             last_collected_at: None,
+            outbox_dirty: false,
+            last_persisted_at: None,
         };
 
         let status = build_status_at(&runtime, now);
@@ -662,6 +689,8 @@ mod tests {
             last_upload_at: None,
             last_upload_message: None,
             last_collected_at: None,
+            outbox_dirty: false,
+            last_persisted_at: None,
         };
 
         let status = build_status_at(
@@ -703,6 +732,8 @@ mod tests {
             last_upload_at: None,
             last_upload_message: None,
             last_collected_at: None,
+            outbox_dirty: false,
+            last_persisted_at: None,
         };
 
         assert!(!should_auto_upload(
@@ -752,6 +783,8 @@ mod tests {
             last_upload_at: Some(Utc.with_ymd_and_hms(2026, 3, 29, 10, 46, 0).unwrap()),
             last_upload_message: Some("Uploaded 1 session".into()),
             last_collected_at: None,
+            outbox_dirty: false,
+            last_persisted_at: None,
         };
 
         let status = build_status_at(
@@ -810,6 +843,8 @@ mod tests {
             last_upload_at: None,
             last_upload_message: None,
             last_collected_at: None,
+            outbox_dirty: false,
+            last_persisted_at: None,
         };
 
         let status = build_status_at(
@@ -868,6 +903,8 @@ mod tests {
             last_upload_at: None,
             last_upload_message: None,
             last_collected_at: None,
+            outbox_dirty: false,
+            last_persisted_at: None,
         };
 
         let status = build_status_at(
