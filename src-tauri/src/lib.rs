@@ -39,7 +39,7 @@ const DEMO_FIXTURE: &str = include_str!("../../../tools/focus-collector/fixtures
 const TRAY_ID: &str = "focus-tracker-tray";
 const SAMPLE_IDLE_THRESHOLD_SECS: i64 = 180;
 const COLLECT_GAP_FLUSH_SECS: i64 = 60;
-const STATUS_SYNC_INTERVAL_SECS: i64 = 30;
+const STATUS_SYNC_INTERVAL_SECS: i64 = 120;
 const PANEL_EDGE_MARGIN_PX: i32 = 12;
 const PANEL_VERTICAL_GAP_PX: i32 = 10;
 const PANEL_WIDTH_PX: f64 = 368.0;
@@ -296,14 +296,14 @@ fn collect_once_inner(state: &SharedState) -> Result<(), String> {
         if should_flush_for_collect_gap(previous_collected_at, observed_at) {
             if let Some(closed) = runtime.sessionizer.flush(previous_collected_at) {
                 runtime.outbox.record_session(closed);
-                runtime.persist()?;
+                runtime.mark_dirty();
             }
         }
     }
 
     if let Some(closed) = runtime.sessionizer.observe(sample, observed_at, idle_secs) {
         runtime.outbox.record_session(closed);
-        runtime.persist()?;
+        runtime.mark_dirty();
     }
 
     runtime.last_collected_at = Some(observed_at);
@@ -435,6 +435,14 @@ fn auto_collect_and_upload(state: &SharedState) -> Result<(), String> {
                     .unwrap_or_else(|_| Utc::now()),
             });
         }
+    }
+
+    {
+        let mut runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "failed to lock runtime state".to_string())?;
+        runtime.persist_if_dirty()?;
     }
 
     Ok(())
