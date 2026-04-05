@@ -69,6 +69,12 @@ pub struct TimelineSegment {
     pub source_session_id: String,
     pub app_name: String,
     pub window_title: Option<String>,
+    #[serde(default)]
+    pub browser_host: Option<String>,
+    #[serde(default)]
+    pub browser_page_title: Option<String>,
+    #[serde(default)]
+    pub browser_surface_type: Option<String>,
     pub started_at: String,
     pub ended_at: String,
     pub start_offset_secs: i64,
@@ -373,6 +379,9 @@ fn slice_session_for_day(
         source_session_id: session.source_session_id.clone(),
         app_name: session.app_name.clone(),
         window_title: session.window_title.clone(),
+        browser_host: session.browser_host.clone(),
+        browser_page_title: session.browser_page_title.clone(),
+        browser_surface_type: session.browser_surface_type.clone(),
         started_at: started_at.to_rfc3339(),
         ended_at: ended_at.to_rfc3339(),
         start_offset_secs: (started_at - day_start).num_seconds().max(0),
@@ -404,6 +413,9 @@ fn remote_display_session_to_timeline_segment(
         source_session_id: session.source_session_id.clone(),
         app_name: session.app_name.clone(),
         window_title: session.window_title.clone(),
+        browser_host: None,
+        browser_page_title: None,
+        browser_surface_type: None,
         started_at: started_at.to_rfc3339(),
         ended_at: ended_at.to_rfc3339(),
         start_offset_secs: (started_at - day_start).num_seconds().max(0),

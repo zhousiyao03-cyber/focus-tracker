@@ -7,6 +7,9 @@ type QueuedSession = {
   sourceSessionId: string;
   appName: string;
   windowTitle: string | null;
+  browserHost: string | null;
+  browserPageTitle: string | null;
+  browserSurfaceType: string | null;
   startedAt: string;
   endedAt: string;
   durationSecs: number;
@@ -33,6 +36,9 @@ type TimelineSegment = {
   sourceSessionId: string;
   appName: string;
   windowTitle: string | null;
+  browserHost: string | null;
+  browserPageTitle: string | null;
+  browserSurfaceType: string | null;
   startedAt: string;
   endedAt: string;
   startOffsetSecs: number;
@@ -63,6 +69,48 @@ function formatRemainingGoal(workSecs: number, goalSecs: number) {
 
 function formatProgressLabel(progress: number) {
   return progress >= 100 ? "8h reached today" : `${progress}% of 8h`;
+}
+
+const SURFACE_LABELS: Record<string, string> = {
+  search: "Search",
+  pr: "PR Review",
+  issue: "Issue",
+  repo: "Repository",
+  chat: "AI Chat",
+  docs: "Docs",
+  design: "Design",
+  mail: "Email",
+  calendar: "Calendar",
+  video: "Video",
+};
+
+function activityLabel(item: {
+  appName: string;
+  browserHost?: string | null;
+  browserPageTitle?: string | null;
+  browserSurfaceType?: string | null;
+}) {
+  if (item.browserHost) {
+    const surface = item.browserSurfaceType
+      ? SURFACE_LABELS[item.browserSurfaceType]
+      : null;
+    const host = item.browserHost.replace(/^www\./, "");
+    if (surface) return `${host} · ${surface}`;
+    return host;
+  }
+  return item.appName;
+}
+
+function segmentTooltip(segment: TimelineSegment) {
+  const label = activityLabel(segment);
+  const duration = formatDuration(segment.durationSecs);
+  const parts = [label];
+  if (segment.browserPageTitle) parts.push(segment.browserPageTitle);
+  const detail =
+    segment.interruptionCount > 0
+      ? `${duration} focused, ${segment.interruptionCount} interruption${segment.interruptionCount > 1 ? "s" : ""}`
+      : duration;
+  return `${parts.join(" — ")} (${detail})`;
 }
 
 function appColor(appName: string) {
@@ -137,7 +185,9 @@ function App() {
     uploadMessage.toLowerCase().includes("desktop token is no longer valid") ||
     uploadMessage.toLowerCase().includes("rate-limited");
   const recoveryGuidance = getRecoveryGuidance(uploadMessage, Boolean(status?.apiKeyPresent));
-  const currentLabel = status?.currentSession?.appName ?? "On track";
+  const currentLabel = status?.currentSession
+    ? activityLabel(status.currentSession)
+    : "On track";
   const remainingGoalLabel = formatRemainingGoal(
     status?.todayWorkSecs ?? 0,
     status?.todayGoalSecs ?? 8 * 60 * 60
@@ -265,15 +315,7 @@ function App() {
                   width: `${Math.max((segment.spanSecs / DAY_SECS) * 100, 0.8)}%`,
                   background: appColor(segment.appName),
                 }}
-                title={
-                  segment.interruptionCount > 0
-                    ? `${segment.appName} (${formatDuration(
-                        segment.durationSecs
-                      )} focused, ${segment.interruptionCount} interruption${
-                        segment.interruptionCount > 1 ? "s" : ""
-                      })`
-                    : `${segment.appName} (${formatDuration(segment.durationSecs)})`
-                }
+                title={segmentTooltip(segment)}
               />
             ))}
           </div>
