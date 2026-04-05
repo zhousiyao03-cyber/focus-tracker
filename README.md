@@ -1,96 +1,259 @@
-# Focus Tracker Tauri Collector
+# Focus Tracker
 
-一个独立的 Tauri + React collector，用来把 Focus Tracker 的桌面采集链路跑通并常驻在本地。
+[English](#focus-tracker) | [中文](#focus-tracker-中文)
 
-当前能力：
+A macOS menubar app that automatically tracks your active windows, sessionizes focus data, and syncs it to a Second Brain backend. Built with **Tauri 2** and **React 19**.
 
-- macOS 下通过 `osascript` 读取前台 app / window title
-- Rust 侧 sessionize + collector-side denoise：
-  - 新窗口需稳定 `10s` 才确认切换
-  - `< 30s` 的 session 不单独入队
-  - `Finder / focus-tracker / Rize / 系统窗口` 这类低权重 app 在 `< 2min` 时不会单独入队
-- 本地 JSON outbox
-- outbox 级别的相邻 session 合并：
-  - 相同 app、间隔 `< 2min` 的片段会自动并成一段
-  - `VS Code / Terminal / Docs / Postman` 这类 coding workflow 也会按任务组合并
-- 本地 recent history，用来让 today total / timeline 不会在上传后归零
-- 服务端日视图同步：
-  - 配置 `base URL + token` 后，桌面端会周期性拉取 `/api/focus/status`
-  - 面板上的 `Working Hours / Focused time / timeline` 会优先对齐服务端 canonical 数据
-  - 本地未上传 session 会叠加到远端快照上，避免短时间内显示倒退
-- 本地设置持久化
-- 后台定时采样循环
-- 采样与上传解耦：
-  - 默认每 `5s` 采样一次
-  - 默认每 `120s` 批量上传一次
-  - 只在 outbox 里有待上传 session 时触发上传
-- idle 判定更宽松：
-  - 默认 `30min` 无输入才会把当前窗口视为 idle
-- tray icon + 隐藏/显示面板
-- 菜单栏顶栏摘要：
-  - tray title 会直接显示 `Working Hours · 8h progress`
-  - 不点开 panel 也能看到今天工作进度
-- 标准 menubar popover 行为：
-  - 点击 tray icon 时固定宽度 panel 会贴在状态栏图标下方
-  - 自动做屏幕边界 clamp，避免在多屏或右侧边缘溢出
-  - 失焦自动隐藏，按 `Esc` 也会收起
-- 通过 bearer token 上传到 Second Brain 的 `/api/focus/ingest`
-- React 面板支持：
-  - working hours + focused time + 8h progress
-  - compact local timeline
-  - open `/focus`
-  - setup needed / upload failed 时显示修复入口
-  - 使用 `/focus` 生成的 pairing code
+Focus Tracker lives in your menu bar as a lightweight tray icon — no dock icon, no distractions. Click it to see today's working hours, focused time, and an 8-hour goal progress bar at a glance.
 
-## 运行前提
+## Features
 
-- Rust toolchain
-- Xcode Command Line Tools / Xcode
-- 一个正在运行的 Second Brain Web app
+- **Automatic window tracking** — reads the frontmost app and window title via macOS APIs
+- **Browser URL enrichment** — captures the current URL from browsers via Accessibility APIs, extracts host, path, search query, and surface type
+- **Smart sessionization** — debounces rapid switches (3s confirmation delay), filters noise (low-priority apps under 30s ignored), enforces 5s minimum session duration
+- **Task group classification** — auto-classifies apps into categories: coding, design, meeting, communication, writing, research
+- **Session merging** — adjacent sessions from the same app (or same task group like VS Code + Terminal) within 2 min are merged
+- **Idle & away detection** — detects system idle time, screen lock, and screensaver
+- **Local persistence** — sessions are stored as JSON in the app data directory with dual queues (pending upload + recent history)
+- **Background sync** — decoupled sampling (every 5s) and batch upload (every 120s) to `/api/focus/ingest`
+- **Server reconciliation** — periodically pulls canonical day data from `/api/focus/status` to keep the display consistent
+- **Device pairing** — secure code-based pairing flow via the web app (no shared API keys)
+- **Menubar summary** — tray title shows `Working Hours · 8h progress` without opening the panel
+- **Standard popover behavior** — screen-edge clamping, auto-hide on focus loss, Esc to dismiss
 
-服务端建议配置：
+## Prerequisites
+
+- macOS (required — uses AppleScript, Core Graphics, Accessibility APIs)
+- [Rust toolchain](https://rustup.rs/)
+- Xcode Command Line Tools
+- [Node.js](https://nodejs.org/) (>= 18) and [pnpm](https://pnpm.io/)
+- A running Second Brain web app instance (for sync features)
+
+## Getting Started
 
 ```bash
-FOCUS_INGEST_API_KEY=your-focus-ingest-api-key
-FOCUS_INGEST_USER_ID=your-user-id
-```
-
-如果你已经登录 Web 端并打开了 `/focus`，也可以直接在 “Desktop access” 区块生成一个 pairing code。新的配对流是：
-
-1. 在 Web 端 `/focus` 点击 `Generate pairing code`
-2. 在桌面端的 `Fix setup` 里粘贴这个 code
-3. collector 会自动换成正式 device token 并保存到本地
-
-这样桌面端就不需要共享全局 ingest key，也不会再暴露手动复制 token 的流程。若 token 被 revoke、过期或配对/上传被限流，collector 会直接显示重连或稍后重试的指引。
-
-## 常用命令
-
-```bash
+# Install frontend dependencies
 pnpm install
-pnpm build
+
+# Run in development mode (Rust + React)
 pnpm tauri dev --no-watch
+
+# Build frontend only
+pnpm build
 ```
 
-如果只想验证 Rust 侧逻辑：
+### Rust-only development
 
 ```bash
 cd src-tauri
-cargo test
-cargo check
+cargo check    # Type-check without building
+cargo test     # Run tests
 ```
 
-可选环境变量：
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `FOCUS_COLLECTOR_SAMPLE_INTERVAL_SECS` | `5` | Seconds between focus samples |
+| `FOCUS_COLLECTOR_UPLOAD_INTERVAL_SECS` | `120` | Seconds between batch uploads |
+| `FOCUS_TRACKER_START_VISIBLE` | `false` | Set to `true` to show panel on launch |
+
+## Device Pairing
+
+Focus Tracker uses a secure pairing flow instead of shared API keys:
+
+1. Open `/focus` on the Second Brain web app
+2. Click **Generate pairing code** in the "Desktop access" section
+3. Paste the code into the desktop app's **Fix setup** screen
+4. The app exchanges the code for a device token and saves it locally
+
+If the token is revoked or expired, the app will prompt you to re-pair.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  React Panel (src/App.tsx)                              │
+│  Polls get_status via Tauri IPC every 5s                │
+└──────────────────────┬──────────────────────────────────┘
+                       │ invoke()
+┌──────────────────────▼──────────────────────────────────┐
+│  Tauri Commands (lib.rs)                                │
+│  get_status, pair_device, update_settings, ...          │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────┐
+│  Background Loop (every sample_interval_secs)           │
+│                                                         │
+│  tracker.rs ──► sessionizer.rs ──► outbox.rs            │
+│  (sample)       (debounce/filter)   (persist)           │
+│                                                         │
+│  outbox.rs ──► uploader.rs ──► Server                   │
+│  (queued)      (batch POST)    /api/focus/ingest        │
+│                                                         │
+│  status_sync.rs ◄── Server                              │
+│  (pull /api/focus/status every 30s)                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Key Modules
+
+| File | Responsibility |
+|---|---|
+| `src-tauri/src/tracker.rs` | Reads frontmost app/window via `osascript`, detects idle/away |
+| `src-tauri/src/accessibility.rs` | Reads browser URL via macOS Accessibility API |
+| `src-tauri/src/browser_semantics.rs` | Extracts structured data from browser URLs |
+| `src-tauri/src/window_list.rs` | Gets visible windows via Core Graphics |
+| `src-tauri/src/sessionizer.rs` | Converts samples into sessions with debounce and filtering |
+| `src-tauri/src/outbox.rs` | Local JSON persistence, deduplication, task group classification |
+| `src-tauri/src/uploader.rs` | Batch uploads to `/api/focus/ingest` with bearer token auth |
+| `src-tauri/src/status_sync.rs` | Pulls canonical day status from the server |
+| `src-tauri/src/pairing.rs` | Device pairing code exchange flow |
+| `src-tauri/src/state.rs` | Shared runtime state (`SharedState`), settings persistence |
+| `src-tauri/src/error_state.rs` | Normalizes errors into user-facing messages |
+| `src-tauri/src/lib.rs` | App setup, tray icon, popover, background loop, IPC commands |
+| `src/App.tsx` | Panel UI — hours, timeline, progress, setup flow |
+
+## Tech Stack
+
+- **Tauri 2** — native macOS app shell with Rust backend
+- **React 19** — panel UI
+- **Vite 7** — frontend build
+- **chrono** / **chrono-tz** — timezone-aware time handling
+- **reqwest** — HTTP client (rustls-tls)
+- **uuid** — session identifiers
+
+## License
+
+Private project. All rights reserved.
+
+---
+
+# Focus Tracker (中文)
+
+[English](#focus-tracker) | [中文](#focus-tracker-中文)
+
+一个 macOS 菜单栏应用，自动追踪你当前聚焦的窗口，将焦点数据会话化，并同步到 Second Brain 后端。基于 **Tauri 2** 和 **React 19** 构建。
+
+Focus Tracker 作为轻量级托盘图标驻留在菜单栏中——没有 Dock 图标，没有干扰。点击即可查看今日工作时长、专注时间和 8 小时目标进度。
+
+## 功能特性
+
+- **自动窗口追踪** — 通过 macOS API 读取当前前台应用和窗口标题
+- **浏览器 URL 采集** — 通过辅助功能 API 获取浏览器当前 URL，提取域名、路径、搜索词和页面类型
+- **智能会话化** — 快速切换防抖（3 秒确认延迟）、噪声过滤（低优先级应用 30 秒内忽略）、最小 5 秒会话时长
+- **任务分组分类** — 自动将应用归类为：编码、设计、会议、沟通、写作、研究
+- **会话合并** — 相同应用（或相同任务组如 VS Code + Terminal）在 2 分钟内的相邻会话自动合并
+- **空闲与离开检测** — 检测系统空闲时间、锁屏和屏保
+- **本地持久化** — 会话以 JSON 格式存储在应用数据目录，双队列管理（待上传 + 近期历史）
+- **后台同步** — 采样（每 5 秒）与批量上传（每 120 秒）解耦
+- **服务端对账** — 周期性拉取服务端权威日数据，保持显示一致
+- **设备配对** — 通过 Web 端的安全配对码流程（无需共享 API 密钥）
+- **菜单栏摘要** — 托盘标题直接显示 `Working Hours · 8h progress`，无需打开面板
+- **标准弹出行为** — 屏幕边缘自适应、失焦自动隐藏、Esc 键收起
+
+## 前置要求
+
+- macOS（必需——依赖 AppleScript、Core Graphics、辅助功能 API）
+- [Rust 工具链](https://rustup.rs/)
+- Xcode Command Line Tools
+- [Node.js](https://nodejs.org/)（>= 18）和 [pnpm](https://pnpm.io/)
+- 运行中的 Second Brain Web 应用实例（用于同步功能）
+
+## 快速开始
 
 ```bash
-FOCUS_COLLECTOR_SAMPLE_INTERVAL_SECS=5
-FOCUS_COLLECTOR_UPLOAD_INTERVAL_SECS=120
+# 安装前端依赖
+pnpm install
+
+# 开发模式运行（Rust + React）
+pnpm tauri dev --no-watch
+
+# 仅构建前端
+pnpm build
 ```
 
-## 目录说明
+### 仅 Rust 开发
 
-- `src-tauri/src/tracker.rs`：macOS 采样
-- `src-tauri/src/sessionizer.rs`：session merge / flush
-- `src-tauri/src/outbox.rs`：本地持久化
-- `src-tauri/src/uploader.rs`：上传 `/api/focus/ingest`
-- `src-tauri/src/state.rs`：共享运行时状态
-- `src/App.tsx`：collector 控制面板
+```bash
+cd src-tauri
+cargo check    # 类型检查
+cargo test     # 运行测试
+```
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `FOCUS_COLLECTOR_SAMPLE_INTERVAL_SECS` | `5` | 采样间隔（秒） |
+| `FOCUS_COLLECTOR_UPLOAD_INTERVAL_SECS` | `120` | 批量上传间隔（秒） |
+| `FOCUS_TRACKER_START_VISIBLE` | `false` | 设为 `true` 可在启动时显示面板 |
+
+## 设备配对
+
+Focus Tracker 使用安全配对流程，而非共享 API 密钥：
+
+1. 在 Second Brain Web 端打开 `/focus`
+2. 在「Desktop access」区块点击 **Generate pairing code**
+3. 将配对码粘贴到桌面端的 **Fix setup** 界面
+4. 应用会自动将配对码交换为设备令牌并保存到本地
+
+如果令牌被撤销或过期，应用会提示重新配对。
+
+## 架构概览
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  React 面板 (src/App.tsx)                                │
+│  每 5 秒通过 Tauri IPC 轮询 get_status                    │
+└──────────────────────┬──────────────────────────────────┘
+                       │ invoke()
+┌──────────────────────▼──────────────────────────────────┐
+│  Tauri 命令 (lib.rs)                                     │
+│  get_status, pair_device, update_settings, ...           │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────┐
+│  后台循环 (每 sample_interval_secs 执行一次)                │
+│                                                         │
+│  tracker.rs ──► sessionizer.rs ──► outbox.rs            │
+│  (采样)         (防抖/过滤)         (持久化)               │
+│                                                         │
+│  outbox.rs ──► uploader.rs ──► 服务端                     │
+│  (待上传队列)    (批量 POST)    /api/focus/ingest          │
+│                                                         │
+│  status_sync.rs ◄── 服务端                                │
+│  (每 30 秒拉取 /api/focus/status)                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 核心模块
+
+| 文件 | 职责 |
+|---|---|
+| `src-tauri/src/tracker.rs` | 通过 `osascript` 读取前台应用/窗口，检测空闲/离开 |
+| `src-tauri/src/accessibility.rs` | 通过 macOS 辅助功能 API 读取浏览器 URL |
+| `src-tauri/src/browser_semantics.rs` | 从浏览器 URL 提取结构化数据 |
+| `src-tauri/src/window_list.rs` | 通过 Core Graphics 获取可见窗口列表 |
+| `src-tauri/src/sessionizer.rs` | 将采样转换为会话，包含防抖和过滤逻辑 |
+| `src-tauri/src/outbox.rs` | 本地 JSON 持久化、去重、任务分组分类 |
+| `src-tauri/src/uploader.rs` | 批量上传到 `/api/focus/ingest`（bearer token 认证） |
+| `src-tauri/src/status_sync.rs` | 从服务端拉取权威日状态 |
+| `src-tauri/src/pairing.rs` | 设备配对码交换流程 |
+| `src-tauri/src/state.rs` | 共享运行时状态（`SharedState`）、设置持久化 |
+| `src-tauri/src/error_state.rs` | 将错误标准化为用户可读信息 |
+| `src-tauri/src/lib.rs` | 应用初始化、托盘图标、弹出窗口、后台循环、IPC 命令 |
+| `src/App.tsx` | 面板 UI — 时长、时间线、进度、配置流程 |
+
+## 技术栈
+
+- **Tauri 2** — 原生 macOS 应用壳，Rust 后端
+- **React 19** — 面板 UI
+- **Vite 7** — 前端构建
+- **chrono** / **chrono-tz** — 时区感知的时间处理
+- **reqwest** — HTTP 客户端（rustls-tls）
+- **uuid** — 会话标识符
+
+## 许可
+
+私有项目，保留所有权利。
