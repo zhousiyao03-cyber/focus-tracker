@@ -1,8 +1,8 @@
 mod accessibility;
 mod browser_semantics;
+mod cli_auth;
 mod error_state;
 mod outbox;
-mod pairing;
 mod sessionizer;
 mod state;
 mod status_sync;
@@ -21,10 +21,11 @@ use tauri::{
     State,
     WindowEvent,
 };
+use tauri_plugin_opener::OpenerExt;
 
 use crate::{
+    cli_auth::{create_auth_session, poll_for_token},
     error_state::normalize_focus_runtime_error,
-    pairing::pair_device as exchange_pairing_code,
     sessionizer::QueuedSession,
     state::{
         build_status, create_state, local_date_string, should_auto_upload, ServerDaySnapshot,
@@ -551,38 +552,47 @@ fn update_settings(
     Ok(build_status(&runtime))
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StartSignInResponse {
+    session_id: String,
+    auth_url: String,
+}
+
 #[tauri::command]
-fn pair_device(
+fn start_sign_in(
     base_url: String,
-    pairing_code: String,
-    device_name: String,
+    app: AppHandle,
+) -> Result<StartSignInResponse, String> {
+    let trimmed = base_url.trim().to_string();
+    let session = create_auth_session(&trimmed)
+        .map_err(|error| normalize_focus_runtime_error(&error))?;
+    let _ = app.opener().open_url(&session.auth_url, None::<&str>);
+    Ok(StartSignInResponse {
+        session_id: session.session_id,
+        auth_url: session.auth_url,
+    })
+}
+
+#[tauri::command]
+fn complete_sign_in(
+    base_url: String,
+    session_id: String,
     time_zone: String,
     state: State<'_, SharedState>,
 ) -> Result<TrackerStatus, String> {
-    let device_id = {
-        let runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "failed to lock runtime state".to_string())?;
-        runtime.outbox.device_id.clone()
-    };
-
-    let response = exchange_pairing_code(
-        base_url.trim(),
-        pairing_code.trim(),
-        &device_id,
-        device_name.trim(),
-    )
-    .map_err(|error| normalize_focus_runtime_error(&error))?;
+    let trimmed = base_url.trim().to_string();
+    let token = poll_for_token(&trimmed, session_id.trim(), Duration::from_secs(300))
+        .map_err(|error| normalize_focus_runtime_error(&error))?;
 
     let mut runtime = state
         .inner
         .lock()
         .map_err(|_| "failed to lock runtime state".to_string())?;
-    runtime.base_url = base_url.trim().to_string();
-    runtime.api_key = response.token;
+    runtime.base_url = trimmed;
+    runtime.api_key = token;
     runtime.time_zone = time_zone.trim().to_string();
-    runtime.last_upload_message = Some(format!("Connected as {}", response.device_name));
+    runtime.last_upload_message = Some("Signed in".into());
     runtime.persist_all()?;
     Ok(build_status(&runtime))
 }
@@ -593,7 +603,7 @@ fn spawn_background_loop(app: AppHandle) {
         if let Err(error) = auto_collect_and_upload(&state) {
             if let Ok(mut runtime) = state.inner.lock() {
                 let normalized = normalize_focus_runtime_error(&error);
-                if normalized.contains("Desktop token is no longer valid") {
+                if normalized.contains("Sign-in is no longer valid") {
                     runtime.api_key.clear();
                     runtime.server_day_snapshot = None;
                     let _ = runtime.persist_all();
@@ -713,10 +723,10 @@ pub fn run() {
             flush_current_session,
             load_demo_fixture,
             upload_queue,
-            pair_device,
+            start_sign_in,
+            complete_sign_in,
             update_settings,
-            hide_panel
-            ,
+            hide_panel,
             set_panel_expanded
         ])
         .run(tauri::generate_context!())

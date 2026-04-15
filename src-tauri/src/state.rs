@@ -432,7 +432,7 @@ fn remote_display_session_to_timeline_segment(
 fn default_settings() -> PersistedSettings {
     PersistedSettings {
         base_url: std::env::var("FOCUS_COLLECTOR_BASE_URL")
-            .unwrap_or_else(|_| "https://second-brain-self-alpha.vercel.app".into()),
+            .unwrap_or_else(|_| "https://www.knosi.xyz".into()),
         api_key: std::env::var("FOCUS_COLLECTOR_API_KEY")
             .or_else(|_| std::env::var("FOCUS_INGEST_API_KEY"))
             .unwrap_or_default(),
@@ -595,7 +595,7 @@ mod tests {
     fn default_settings_fall_back_without_env() {
         let settings = default_settings();
 
-        assert_eq!(settings.base_url, "https://second-brain-self-alpha.vercel.app");
+        assert_eq!(settings.base_url, "https://www.knosi.xyz");
         assert_eq!(settings.time_zone, "UTC");
         assert_eq!(settings.sample_interval_secs, 5);
         assert_eq!(settings.upload_interval_secs, 300);

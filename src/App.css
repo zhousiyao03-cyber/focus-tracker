@@ -106,9 +106,14 @@ input {
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   padding: 4px 0 12px;
   display: grid;
-  grid-template-columns: 1fr 116px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 14px;
   margin-bottom: 6px;
+  align-items: start;
+}
+
+.hero-copy {
+  min-width: 0;
 }
 
 .hero.compact {
@@ -129,8 +134,9 @@ input {
 }
 
 .hero h1 {
-  font-size: 2rem;
+  font-size: 1.8rem;
   line-height: 0.95;
+  word-break: break-word;
 }
 
 .lede {
@@ -414,4 +420,14 @@ input {
 .callout.error {
   background: rgba(239, 68, 68, 0.16);
   color: #fca5a5;
+}
+
+.callout.compact {
+  margin-top: 12px;
+  max-height: 88px;
+  overflow-y: auto;
+  font-weight: 500;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  word-break: break-word;
 }

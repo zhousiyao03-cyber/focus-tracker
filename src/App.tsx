@@ -47,7 +47,7 @@ type TimelineSegment = {
   interruptionCount: number;
 };
 
-const DEFAULT_BASE_URL = "https://second-brain-self-alpha.vercel.app";
+const DEFAULT_BASE_URL = "https://www.knosi.xyz";
 const DAY_SECS = 24 * 60 * 60;
 
 function formatDuration(seconds: number) {
@@ -130,18 +130,18 @@ function getRecoveryGuidance(message: string, hasToken: boolean) {
   const lowered = message.toLowerCase();
 
   if (
-    lowered.includes("desktop token is no longer valid") ||
+    lowered.includes("sign-in is no longer valid") ||
     lowered.includes("unauthorized")
   ) {
-    return "Generate a new pairing code in /focus, then reconnect this collector.";
+    return "Your sign-in expired. Click Sign in to reconnect.";
   }
 
   if (lowered.includes("rate-limited") || lowered.includes("too many requests")) {
-    return "Wait a few minutes before retrying pairing or upload.";
+    return "Wait a few minutes before retrying sign-in or upload.";
   }
 
   if (!hasToken) {
-    return "Generate a pairing code in /focus and connect this collector once.";
+    return "Sign in with your Knosi account to start uploading sessions.";
   }
 
   return message;
@@ -167,10 +167,10 @@ function getTauriErrorMessage(caughtError: unknown, fallback: string) {
 
 function App() {
   const [status, setStatus] = useState<TrackerStatus | null>(null);
-  const [pairingCode, setPairingCode] = useState("");
-  const [busy, setBusy] = useState<"save" | null>(null);
+  const [busy, setBusy] = useState<"signin" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
+  const [signInStage, setSignInStage] = useState<"idle" | "waiting">("idle");
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   const progress = status
@@ -182,7 +182,7 @@ function App() {
     !status?.baseUrl ||
     uploadMessage.toLowerCase().includes("upload failed") ||
     uploadMessage.toLowerCase().includes("unauthorized") ||
-    uploadMessage.toLowerCase().includes("desktop token is no longer valid") ||
+    uploadMessage.toLowerCase().includes("sign-in is no longer valid") ||
     uploadMessage.toLowerCase().includes("rate-limited");
   const recoveryGuidance = getRecoveryGuidance(uploadMessage, Boolean(status?.apiKeyPresent));
   const currentLabel = status?.currentSession
@@ -198,18 +198,28 @@ function App() {
     setStatus(next);
   }
 
-  async function runAction(action: () => Promise<TrackerStatus>) {
-    setBusy("save");
+  async function handleSignIn() {
+    setBusy("signin");
     setError(null);
+    setSignInStage("waiting");
     try {
-      const next = await action();
+      const baseUrl = status?.baseUrl ?? DEFAULT_BASE_URL;
+      const session = await invoke<{ sessionId: string; authUrl: string }>(
+        "start_sign_in",
+        { baseUrl }
+      );
+      const next = await invoke<TrackerStatus>("complete_sign_in", {
+        baseUrl,
+        sessionId: session.sessionId,
+        timeZone: browserTimeZone,
+      });
       setStatus(next);
       setShowSetup(false);
-      setPairingCode("");
     } catch (caughtError) {
-      setError(getTauriErrorMessage(caughtError, "Unknown Tauri error"));
+      setError(getTauriErrorMessage(caughtError, "Sign-in failed"));
     } finally {
       setBusy(null);
+      setSignInStage("idle");
     }
   }
 
@@ -284,7 +294,7 @@ function App() {
               type="button"
               onClick={() => setShowSetup((current) => !current)}
             >
-              {showSetup ? "Hide setup" : status?.apiKeyPresent ? "Reconnect" : "Fix setup"}
+              {showSetup ? "Hide setup" : status?.apiKeyPresent ? "Reconnect" : "Sign in"}
             </button>
           </div>
         </div>
@@ -330,62 +340,46 @@ function App() {
         <section className="panel">
           <div className="section-header tight">
             <div>
-              <h2>{uploadNeedsAttention ? "Attention needed" : "Desktop setup"}</h2>
+              <h2>{status?.apiKeyPresent ? "Reconnect desktop" : "Sign in to Knosi"}</h2>
               <p>
-                {uploadNeedsAttention
-                  ? recoveryGuidance
-                  : "Reconnect this desktop or pair it to another environment."}
+                {signInStage === "waiting"
+                  ? "Approve the desktop in the browser tab that just opened."
+                  : status?.apiKeyPresent
+                    ? "Lost your session? Sign in again to resume uploads."
+                    : "This desktop needs to sign in with your Knosi account before uploading."}
               </p>
             </div>
             <button
               className="ghost"
               type="button"
               onClick={() => setShowSetup(false)}
-              disabled={!showSetup}
+              disabled={busy !== null}
             >
               Close
             </button>
           </div>
 
-          {showSetup ? (
-            <>
-              <div className="form-grid compact-form">
-                <label>
-                  <span>Pairing code</span>
-                  <input
-                    value={pairingCode}
-                    onChange={(event) => setPairingCode(event.currentTarget.value.toUpperCase())}
-                    placeholder="Paste the code from /focus"
-                  />
-                </label>
-              </div>
-              <div className="actions compact-actions">
-                <button
-                  className="accent"
-                  disabled={busy !== null || !status?.baseUrl || !pairingCode.trim()}
-                  onClick={() =>
-                    runAction(() =>
-                      invoke("pair_device", {
-                        baseUrl: status?.baseUrl ?? DEFAULT_BASE_URL,
-                        pairingCode,
-                        deviceName: "MacBook Focus Tracker",
-                        timeZone: browserTimeZone,
-                      })
-                    )
-                  }
-                >
-                  {busy === "save" ? "Connecting..." : "Connect desktop"}
-                </button>
-              </div>
-              <p className="metric-subtle">
-                Generate a pairing code in `/focus`, paste it here once, and this desktop will connect automatically.
-              </p>
-            </>
-          ) : null}
+          <div className="actions compact-actions">
+            <button
+              className="accent"
+              disabled={busy !== null || !status?.baseUrl}
+              onClick={() => void handleSignIn()}
+            >
+              {busy === "signin"
+                ? "Waiting for approval…"
+                : status?.apiKeyPresent
+                  ? "Sign in again"
+                  : "Sign in with Knosi"}
+            </button>
+          </div>
+
+          {error ? <div className="callout error compact">{error}</div> : null}
         </section>
       ) : null}
 
-      {error ? <div className="callout error">{error}</div> : null}
+      {error && !showSetup && !uploadNeedsAttention ? (
+        <div className="callout error">{error}</div>
+      ) : null}
     </main>
   );
 }

@@ -7,11 +7,11 @@ pub fn normalize_focus_runtime_error(message: &str) -> String {
         || lowered.contains("expired")
         || lowered.contains("revoked")
     {
-        return "Desktop token is no longer valid. Generate a new pairing code in /focus and reconnect this collector.".into();
+        return "Sign-in is no longer valid. Click Sign in to reconnect.".into();
     }
 
     if lowered.contains("status 429") || lowered.contains("too many requests") {
-        return "Pairing or upload is temporarily rate-limited. Wait a few minutes and try again.".into();
+        return "Sign-in or upload is temporarily rate-limited. Wait a few minutes and try again.".into();
     }
 
     message.to_string()
@@ -25,19 +25,19 @@ mod tests {
     fn rewrites_invalid_token_errors_into_reconnect_guidance() {
         assert_eq!(
             normalize_focus_runtime_error("status sync failed with status 401 Unauthorized"),
-            "Desktop token is no longer valid. Generate a new pairing code in /focus and reconnect this collector."
+            "Sign-in is no longer valid. Click Sign in to reconnect."
         );
         assert_eq!(
-            normalize_focus_runtime_error("pairing failed with status 410: Pairing code expired"),
-            "Desktop token is no longer valid. Generate a new pairing code in /focus and reconnect this collector."
+            normalize_focus_runtime_error("poll failed with status 410: session expired"),
+            "Sign-in is no longer valid. Click Sign in to reconnect."
         );
     }
 
     #[test]
     fn rewrites_rate_limit_errors_into_retry_guidance() {
         assert_eq!(
-            normalize_focus_runtime_error("pairing failed with status 429: Too Many Requests"),
-            "Pairing or upload is temporarily rate-limited. Wait a few minutes and try again."
+            normalize_focus_runtime_error("upload failed with status 429: Too Many Requests"),
+            "Sign-in or upload is temporarily rate-limited. Wait a few minutes and try again."
         );
     }
 }
