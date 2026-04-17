@@ -6,6 +6,18 @@ A macOS menubar app that automatically tracks your active windows, sessionizes f
 
 Focus Tracker lives in your menu bar as a lightweight tray icon — no dock icon, no distractions. Click it to see today's working hours, focused time, and an 8-hour goal progress bar at a glance.
 
+## Download
+
+**[⬇️ Download focus-tracker_0.2.0_aarch64.dmg](https://github.com/zhousiyao03-cyber/focus-tracker/releases/latest/download/focus-tracker_0.2.0_aarch64.dmg)** (macOS, Apple Silicon)
+
+After downloading:
+
+1. Open the `.dmg` and drag **focus-tracker.app** into `/Applications`.
+2. Launch it; grant **Accessibility** and **Automation** permissions when macOS prompts.
+3. Click the tray icon → **Sign in** with your [Knosi](https://www.knosi.xyz) account.
+
+Not code-signed yet — on first launch, right-click the app and choose **Open** to bypass Gatekeeper. See all builds on the [Releases page](https://github.com/zhousiyao03-cyber/focus-tracker/releases).
+
 ## Features
 
 - **Automatic window tracking** — reads the frontmost app and window title via macOS APIs
@@ -136,6 +148,18 @@ Private project. All rights reserved.
 一个 macOS 菜单栏应用，自动追踪你当前聚焦的窗口，将焦点数据会话化，并同步到 Second Brain 后端。基于 **Tauri 2** 和 **React 19** 构建。
 
 Focus Tracker 作为轻量级托盘图标驻留在菜单栏中——没有 Dock 图标，没有干扰。点击即可查看今日工作时长、专注时间和 8 小时目标进度。
+
+## 下载
+
+**[⬇️ 下载 focus-tracker_0.2.0_aarch64.dmg](https://github.com/zhousiyao03-cyber/focus-tracker/releases/latest/download/focus-tracker_0.2.0_aarch64.dmg)**（macOS，Apple Silicon）
+
+下载后：
+
+1. 打开 `.dmg` 并将 **focus-tracker.app** 拖入 `/Applications`
+2. 启动应用；macOS 弹框时授予**辅助功能**和**自动化**权限
+3. 点击托盘图标 → **Sign in**，用你的 [Knosi](https://www.knosi.xyz) 账号登录
+
+当前未做代码签名 —— 首次启动如被 Gatekeeper 拦截，右键点应用选 **Open** 即可。完整历史版本见 [Releases 页面](https://github.com/zhousiyao03-cyber/focus-tracker/releases)。
 
 ## 功能特性
 
