@@ -350,14 +350,25 @@ fn upload_queue_inner(
         return Ok(());
     }
 
-    let response = upload_sessions(&base_url, &api_key, &device_id, &time_zone, &queued_sessions)
-        .map_err(|error| normalize_focus_runtime_error(&error))?;
+    const UPLOAD_BATCH_SIZE: usize = 200;
+    let mut accepted_total: usize = 0;
+    let mut accepted_ids: Vec<String> = Vec::new();
+    let mut rejected_all: Vec<crate::uploader::RejectedSession> = Vec::new();
+    let mut last_time_zone = time_zone.clone();
 
-    let rejected_summary = if response.rejected.is_empty() {
+    for batch in queued_sessions.chunks(UPLOAD_BATCH_SIZE) {
+        let response = upload_sessions(&base_url, &api_key, &device_id, &time_zone, batch)
+            .map_err(|error| normalize_focus_runtime_error(&error))?;
+        accepted_total += response.accepted_count;
+        accepted_ids.extend(response.accepted);
+        rejected_all.extend(response.rejected);
+        last_time_zone = response.time_zone;
+    }
+
+    let rejected_summary = if rejected_all.is_empty() {
         "0 rejected".to_string()
     } else {
-        response
-            .rejected
+        rejected_all
             .iter()
             .map(|item| format!("{}: {}", item.source_session_id, item.reason))
             .collect::<Vec<_>>()
@@ -371,11 +382,11 @@ fn upload_queue_inner(
     runtime
         .outbox
         .queued_sessions
-        .retain(|session| !response.accepted.iter().any(|accepted| accepted == &session.source_session_id));
+        .retain(|session| !accepted_ids.iter().any(|accepted| accepted == &session.source_session_id));
     runtime.last_upload_at = Some(Utc::now());
     runtime.last_upload_message = Some(format!(
         "Uploaded {} session(s) to {}, {}",
-        response.accepted_count, response.time_zone, rejected_summary
+        accepted_total, last_time_zone, rejected_summary
     ));
     runtime.persist()?;
 
